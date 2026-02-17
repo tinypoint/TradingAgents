@@ -219,3 +219,7 @@ __marimo__/
 **/data_cache/
 results
 reports
+
+# Frontend
+web/node_modules/
+web/dist/

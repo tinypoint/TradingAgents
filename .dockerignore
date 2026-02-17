@@ -1,0 +1,24 @@
+.git
+.gitignore
+.env
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+
+# Runtime artifacts
+results
+reports
+eval_results
+*.log
+
+# Frontend is built from its own context in compose
+web
+
+# Editor/system noise
+.idea
+.vscode
+*.swp
+*.swo

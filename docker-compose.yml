@@ -1,9 +1,9 @@
 services:
-  tradingagents:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: tradingagents-local
+    image: tradingagents-api
     env_file:
       - .env
     environment:
@@ -16,6 +16,28 @@ services:
         source: ${CODEX_AUTH_FILE}
         target: /root/.codex/auth.json
         read_only: true
-    stdin_open: true
-    tty: true
-    command: ["sleep", "infinity"]
+    ports:
+      - "18080:8000"
+    command: ["uvicorn", "server.web_app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: tradingagents-web
+    working_dir: /web
+    depends_on:
+      - api
+    volumes:
+      - type: bind
+        source: ./web
+        target: /web
+      - web_node_modules:/web/node_modules
+    environment:
+      VITE_API_PROXY: http://api:8000
+    ports:
+      - "15173:5173"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+
+volumes:
+  web_node_modules:

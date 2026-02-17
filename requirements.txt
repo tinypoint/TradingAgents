@@ -22,3 +22,5 @@ langchain_anthropic
 langchain-google-genai
 matplotlib
 mplfinance
+fastapi
+uvicorn
