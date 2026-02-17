@@ -1,5 +1,6 @@
 from typing import Optional
 import datetime
+from datetime import timedelta
 import typer
 from pathlib import Path
 from functools import wraps
@@ -55,6 +56,7 @@ class MessageBuffer:
         "social": "Social Analyst",
         "news": "News Analyst",
         "fundamentals": "Fundamentals Analyst",
+        "quant": "Quant Analyst",
     }
 
     # Report section mapping: section -> (analyst_key for filtering, finalizing_agent)
@@ -65,6 +67,7 @@ class MessageBuffer:
         "sentiment_report": ("social", "Social Analyst"),
         "news_report": ("news", "News Analyst"),
         "fundamentals_report": ("fundamentals", "Fundamentals Analyst"),
+        "quant_report": ("quant", "Quant Analyst"),
         "investment_plan": (None, "Research Manager"),
         "trader_investment_plan": (None, "Trader"),
         "final_trade_decision": (None, "Portfolio Manager"),
@@ -173,6 +176,7 @@ class MessageBuffer:
                 "sentiment_report": "Social Sentiment",
                 "news_report": "News Analysis",
                 "fundamentals_report": "Fundamentals Analysis",
+                "quant_report": "Quant Technical Analysis",
                 "investment_plan": "Research Team Decision",
                 "trader_investment_plan": "Trading Team Plan",
                 "final_trade_decision": "Portfolio Management Decision",
@@ -188,7 +192,13 @@ class MessageBuffer:
         report_parts = []
 
         # Analyst Team Reports - use .get() to handle missing sections
-        analyst_sections = ["market_report", "sentiment_report", "news_report", "fundamentals_report"]
+        analyst_sections = [
+            "market_report",
+            "sentiment_report",
+            "news_report",
+            "fundamentals_report",
+            "quant_report",
+        ]
         if any(self.report_sections.get(section) for section in analyst_sections):
             report_parts.append("## Analyst Team Reports")
             if self.report_sections.get("market_report"):
@@ -206,6 +216,10 @@ class MessageBuffer:
             if self.report_sections.get("fundamentals_report"):
                 report_parts.append(
                     f"### Fundamentals Analysis\n{self.report_sections['fundamentals_report']}"
+                )
+            if self.report_sections.get("quant_report"):
+                report_parts.append(
+                    f"### Quant Technical Analysis\n{self.report_sections['quant_report']}"
                 )
 
         # Research Team Reports
@@ -286,6 +300,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
             "Social Analyst",
             "News Analyst",
             "Fundamentals Analyst",
+            "Quant Analyst",
         ],
         "Research Team": ["Bull Researcher", "Bear Researcher", "Research Manager"],
         "Trading Team": ["Trader"],
@@ -517,10 +532,32 @@ def get_user_selections():
     )
     analysis_date = get_analysis_date()
 
-    # Step 3: Select analysts
+    # Step 3: Timeframe
     console.print(
         create_question_box(
-            "Step 3: Analysts Team", "Select your LLM analyst agents for the analysis"
+            "Step 3: Timeframe",
+            "Select chart interval/timeframe (compatibility-focused defaults)",
+            "1d",
+        )
+    )
+    selected_timeframe = get_timeframe()
+
+    # Step 4: Time range
+    console.print(
+        create_question_box(
+            "Step 4: Time Range",
+            "Choose a quick range or enter custom start/end dates",
+            "Last 6 months",
+        )
+    )
+    start_date, end_date = get_time_range(analysis_date)
+    # Keep trade_date behavior by using end_date as analysis_date in graph state.
+    analysis_date = end_date
+
+    # Step 5: Select analysts
+    console.print(
+        create_question_box(
+            "Step 5: Analysts Team", "Select your LLM analyst agents for the analysis"
         )
     )
     selected_analysts = select_analysts()
@@ -528,32 +565,32 @@ def get_user_selections():
         f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
     )
 
-    # Step 4: Research depth
+    # Step 6: Research depth
     console.print(
         create_question_box(
-            "Step 4: Research Depth", "Select your research depth level"
+            "Step 6: Research Depth", "Select your research depth level"
         )
     )
     selected_research_depth = select_research_depth()
 
-    # Step 5: OpenAI backend
+    # Step 7: OpenAI backend
     console.print(
         create_question_box(
-            "Step 5: OpenAI backend", "Select which service to talk to"
+            "Step 7: OpenAI backend", "Select which service to talk to"
         )
     )
     selected_llm_provider, backend_url = select_llm_provider()
     
-    # Step 6: Thinking agents
+    # Step 8: Thinking agents
     console.print(
         create_question_box(
-            "Step 6: Thinking Agents", "Select your thinking agents for analysis"
+            "Step 8: Thinking Agents", "Select your thinking agents for analysis"
         )
     )
     selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
     selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
-    # Step 7: Provider-specific thinking configuration
+    # Step 9: Provider-specific thinking configuration
     thinking_level = None
     reasoning_effort = None
 
@@ -561,7 +598,7 @@ def get_user_selections():
     if provider_lower == "google":
         console.print(
             create_question_box(
-                "Step 7: Thinking Mode",
+                "Step 9: Thinking Mode",
                 "Configure Gemini thinking mode"
             )
         )
@@ -569,7 +606,7 @@ def get_user_selections():
     elif provider_lower == "openai":
         console.print(
             create_question_box(
-                "Step 7: Reasoning Effort",
+                "Step 9: Reasoning Effort",
                 "Configure OpenAI reasoning effort level"
             )
         )
@@ -578,6 +615,9 @@ def get_user_selections():
     return {
         "ticker": selected_ticker,
         "analysis_date": analysis_date,
+        "timeframe": selected_timeframe,
+        "start_date": start_date,
+        "end_date": end_date,
         "analysts": selected_analysts,
         "research_depth": selected_research_depth,
         "llm_provider": selected_llm_provider.lower(),
@@ -613,6 +653,73 @@ def get_analysis_date():
             )
 
 
+def _parse_date_yyyy_mm_dd(value: str) -> datetime.datetime:
+    return datetime.datetime.strptime(value, "%Y-%m-%d")
+
+
+def get_timeframe() -> str:
+    """Get timeframe from user input (focused on robust yfinance compatibility)."""
+    options = {
+        "1": ("1d", "Daily (Recommended)"),
+        "2": ("1wk", "Weekly"),
+        "3": ("1mo", "Monthly"),
+        "4": ("1h", "1 Hour (intraday, limited history)"),
+        "5": ("15m", "15 Minutes (intraday, limited history)"),
+    }
+    while True:
+        console.print("[dim]1) 1d  2) 1wk  3) 1mo  4) 1h  5) 15m[/dim]")
+        choice = typer.prompt("", default="1").strip()
+        if choice in options:
+            return options[choice][0]
+        if choice in {v[0] for v in options.values()}:
+            return choice
+        console.print("[red]Invalid timeframe. Choose 1-5 or enter one of: 1d, 1wk, 1mo, 1h, 15m[/red]")
+
+
+def get_time_range(anchor_end_date: str) -> tuple[str, str]:
+    """Get time range using quick presets or custom start/end input."""
+    while True:
+        end_dt = _parse_date_yyyy_mm_dd(anchor_end_date)
+        today = datetime.datetime.now().date()
+        if end_dt.date() > today:
+            end_dt = datetime.datetime.combine(today, datetime.time.min)
+
+        console.print("[dim]1) 1M  2) 3M  3) 6M (Recommended)  4) 1Y  5) YTD  6) Custom start/end[/dim]")
+        choice = typer.prompt("", default="3").strip()
+        if choice == "1":
+            start_dt = end_dt - timedelta(days=30)
+            return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
+        if choice == "2":
+            start_dt = end_dt - timedelta(days=90)
+            return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
+        if choice == "3":
+            start_dt = end_dt - timedelta(days=180)
+            return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
+        if choice == "4":
+            start_dt = end_dt - timedelta(days=365)
+            return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
+        if choice == "5":
+            start_dt = datetime.datetime(end_dt.year, 1, 1)
+            return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")
+        if choice == "6":
+            start_str = typer.prompt("Start date (YYYY-MM-DD)")
+            end_str = typer.prompt("End date (YYYY-MM-DD)", default=end_dt.strftime("%Y-%m-%d"))
+            try:
+                start_dt = _parse_date_yyyy_mm_dd(start_str.strip())
+                end_custom_dt = _parse_date_yyyy_mm_dd(end_str.strip())
+            except ValueError:
+                console.print("[red]Invalid date format. Please use YYYY-MM-DD[/red]")
+                continue
+            if end_custom_dt.date() > today:
+                console.print("[red]End date cannot be in the future[/red]")
+                continue
+            if start_dt > end_custom_dt:
+                console.print("[red]Start date must be on or before end date[/red]")
+                continue
+            return start_dt.strftime("%Y-%m-%d"), end_custom_dt.strftime("%Y-%m-%d")
+        console.print("[red]Invalid selection. Choose 1-6[/red]")
+
+
 def save_report_to_disk(final_state, ticker: str, save_path: Path):
     """Save complete analysis report to disk with organized subfolders."""
     save_path.mkdir(parents=True, exist_ok=True)
@@ -637,6 +744,10 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
         analysts_dir.mkdir(exist_ok=True)
         (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"])
         analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+    if final_state.get("quant_report"):
+        analysts_dir.mkdir(exist_ok=True)
+        (analysts_dir / "quant.md").write_text(final_state["quant_report"])
+        analyst_parts.append(("Quant Analyst", final_state["quant_report"]))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
         sections.append(f"## I. Analyst Team Reports\n\n{content}")
@@ -718,6 +829,8 @@ def display_complete_report(final_state):
         analysts.append(("News Analyst", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
         analysts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+    if final_state.get("quant_report"):
+        analysts.append(("Quant Analyst", final_state["quant_report"]))
     if analysts:
         console.print(Panel("[bold]I. Analyst Team Reports[/bold]", border_style="cyan"))
         for title, content in analysts:
@@ -772,18 +885,20 @@ def update_research_team_status(status):
 
 
 # Ordered list of analysts for status transitions
-ANALYST_ORDER = ["market", "social", "news", "fundamentals"]
+ANALYST_ORDER = ["market", "social", "news", "fundamentals", "quant"]
 ANALYST_AGENT_NAMES = {
     "market": "Market Analyst",
     "social": "Social Analyst",
     "news": "News Analyst",
     "fundamentals": "Fundamentals Analyst",
+    "quant": "Quant Analyst",
 }
 ANALYST_REPORT_MAP = {
     "market": "market_report",
     "social": "sentiment_report",
     "news": "news_report",
     "fundamentals": "fundamentals_report",
+    "quant": "quant_report",
 }
 
 
@@ -993,6 +1108,13 @@ def run_analysis():
             "System", f"Analysis date: {selections['analysis_date']}"
         )
         message_buffer.add_message(
+            "System", f"Timeframe: {selections['timeframe']}"
+        )
+        message_buffer.add_message(
+            "System",
+            f"Date range: {selections['start_date']} to {selections['end_date']}",
+        )
+        message_buffer.add_message(
             "System",
             f"Selected analysts: {', '.join(analyst.value for analyst in selections['analysts'])}",
         )
@@ -1011,7 +1133,11 @@ def run_analysis():
 
         # Initialize state and get graph args with callbacks
         init_agent_state = graph.propagator.create_initial_state(
-            selections["ticker"], selections["analysis_date"]
+            selections["ticker"],
+            selections["analysis_date"],
+            selections["timeframe"],
+            selections["start_date"],
+            selections["end_date"],
         )
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)

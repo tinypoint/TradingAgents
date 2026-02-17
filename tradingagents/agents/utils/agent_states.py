@@ -50,6 +50,9 @@ class RiskDebateState(TypedDict):
 class AgentState(MessagesState):
     company_of_interest: Annotated[str, "Company that we are interested in trading"]
     trade_date: Annotated[str, "What date we are trading at"]
+    timeframe: Annotated[str, "Requested chart interval/timeframe (e.g. 1d, 1h, 15m)"]
+    start_date: Annotated[str, "Requested range start date in YYYY-MM-DD"]
+    end_date: Annotated[str, "Requested range end date in YYYY-MM-DD"]
 
     sender: Annotated[str, "Agent that sent this message"]
 
@@ -60,6 +63,7 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    quant_report: Annotated[str, "Report from the Quant technical analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

@@ -1,0 +1,21 @@
+services:
+  tradingagents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tradingagents-local
+    env_file:
+      - .env
+    environment:
+      CODEX_HOME: /root/.codex
+    volumes:
+      - type: bind
+        source: .
+        target: /app
+      - type: bind
+        source: ${CODEX_AUTH_FILE}
+        target: /root/.codex/auth.json
+        read_only: true
+    stdin_open: true
+    tty: true
+    command: ["sleep", "infinity"]

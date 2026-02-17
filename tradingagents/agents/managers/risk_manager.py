@@ -11,11 +11,12 @@ def create_risk_manager(llm, memory):
         risk_debate_state = state["risk_debate_state"]
         market_research_report = state["market_report"]
         news_report = state["news_report"]
-        fundamentals_report = state["news_report"]
+        fundamentals_report = state["fundamentals_report"]
         sentiment_report = state["sentiment_report"]
+        quant_report = state.get("quant_report", "")
         trader_plan = state["investment_plan"]
 
-        curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
+        curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}\n\n{quant_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
 
         past_memory_str = ""
@@ -29,6 +30,7 @@ Guidelines for Decision-Making:
 2. **Provide Rationale**: Support your recommendation with direct quotes and counterarguments from the debate.
 3. **Refine the Trader's Plan**: Start with the trader's original plan, **{trader_plan}**, and adjust it based on the analysts' insights.
 4. **Learn from Past Mistakes**: Use lessons from **{past_memory_str}** to address prior misjudgments and improve the decision you are making now to make sure you don't make a wrong BUY/SELL/HOLD call that loses money.
+5. **Integrate Quant Signals**: Use this quant technical report as supplementary evidence and reconcile it with debate arguments: {quant_report}
 
 Deliverables:
 - A clear and actionable recommendation: Buy, Sell, or Hold.

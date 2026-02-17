@@ -8,6 +8,7 @@ ANALYST_ORDER = [
     ("Social Media Analyst", AnalystType.SOCIAL),
     ("News Analyst", AnalystType.NEWS),
     ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
+    ("Quant Technical Analyst", AnalystType.QUANT),
 ]
 
 
@@ -134,6 +135,12 @@ def select_shallow_thinking_agent(provider) -> str:
             ("GPT-5.1 - Flexible reasoning", "gpt-5.1"),
             ("GPT-4.1 - Smartest non-reasoning, 1M context", "gpt-4.1"),
         ],
+        "openai-codex": [
+            ("GPT-5.3 Codex - Latest Codex reasoning model", "gpt-5.3-codex"),
+            ("GPT-5.3 Codex Spark - Faster Codex variant", "gpt-5.3-codex-spark"),
+            ("GPT-5.2 Codex - Stable Codex model", "gpt-5.2-codex"),
+            ("GPT-5.1 Codex - Legacy Codex model", "gpt-5.1-codex"),
+        ],
         "anthropic": [
             ("Claude Haiku 4.5 - Fast + extended thinking", "claude-haiku-4-5"),
             ("Claude Sonnet 4.5 - Best for agents/coding", "claude-sonnet-4-5"),
@@ -200,6 +207,12 @@ def select_deep_thinking_agent(provider) -> str:
             ("GPT-5 Mini - Cost-optimized reasoning", "gpt-5-mini"),
             ("GPT-5 Nano - Ultra-fast, high-throughput", "gpt-5-nano"),
         ],
+        "openai-codex": [
+            ("GPT-5.3 Codex - Latest Codex reasoning model", "gpt-5.3-codex"),
+            ("GPT-5.3 Codex Spark - Faster Codex variant", "gpt-5.3-codex-spark"),
+            ("GPT-5.2 Codex - Stable Codex model", "gpt-5.2-codex"),
+            ("GPT-5.1 Codex - Legacy Codex model", "gpt-5.1-codex"),
+        ],
         "anthropic": [
             ("Claude Sonnet 4.5 - Best for agents/coding", "claude-sonnet-4-5"),
             ("Claude Opus 4.5 - Premium, max intelligence", "claude-opus-4-5"),
@@ -256,6 +269,7 @@ def select_llm_provider() -> tuple[str, str]:
     """Select the OpenAI api url using interactive selection."""
     # Define OpenAI api options with their corresponding endpoints
     BASE_URLS = [
+        ("OpenAI-Codex", "https://chatgpt.com/backend-api/codex"),
         ("OpenAI", "https://api.openai.com/v1"),
         ("Google", "https://generativelanguage.googleapis.com/v1"),
         ("Anthropic", "https://api.anthropic.com/"),

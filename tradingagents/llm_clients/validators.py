@@ -26,6 +26,12 @@ VALID_MODELS = {
         "gpt-4o",
         "gpt-4o-mini",
     ],
+    "openai-codex": [
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark",
+        "gpt-5.2-codex",
+        "gpt-5.1-codex",
+    ],
     "anthropic": [
         # Claude 4.5 series (2025)
         "claude-opus-4-5",
