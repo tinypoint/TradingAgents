@@ -64,6 +64,11 @@ class AgentState(MessagesState):
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     quant_report: Annotated[str, "Report from the Quant technical analyst"]
+    selected_masters: Annotated[list[str], "Selected master advisor personas"]
+    buffett_report: Annotated[str, "Report from Buffett advisor"]
+    larry_williams_report: Annotated[str, "Report from Larry Williams advisor"]
+    livermore_report: Annotated[str, "Report from Jesse Livermore advisor"]
+    style_report: Annotated[str, "Aggregated style council report"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 AnalystName = Literal["market", "social", "news", "fundamentals", "quant"]
+MasterName = Literal["buffett", "larry_williams", "livermore"]
 ProviderName = Literal[
     "openai",
     "openai-codex",
@@ -24,6 +25,7 @@ class JobCreateRequest(BaseModel):
     analysts: List[AnalystName] = Field(
         default_factory=lambda: ["market", "social", "news", "fundamentals", "quant"]
     )
+    selected_masters: List[MasterName] = Field(default_factory=list)
     llm_provider: ProviderName = Field(default="openai")
     backend_url: Optional[str] = Field(default=None)
     quick_think_llm: Optional[str] = Field(default=None)

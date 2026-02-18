@@ -46,6 +46,7 @@ class TradingAgentsGraph:
     def __init__(
         self,
         selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_masters=None,
         debug=False,
         config: Dict[str, Any] = None,
         callbacks: Optional[List] = None,
@@ -61,6 +62,7 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
+        self.selected_masters = list(selected_masters or [])
 
         # Update the interface's config
         set_config(self.config)
@@ -128,7 +130,10 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph
-        self.graph = self.graph_setup.setup_graph(selected_analysts)
+        self.graph = self.graph_setup.setup_graph(
+            selected_analysts=selected_analysts,
+            selected_masters=self.selected_masters,
+        )
 
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
@@ -190,7 +195,7 @@ class TradingAgentsGraph:
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date
+            company_name, trade_date, selected_masters=self.selected_masters
         )
         args = self.propagator.get_graph_args()
 
@@ -223,11 +228,16 @@ class TradingAgentsGraph:
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
+            "selected_masters": final_state.get("selected_masters", []),
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
             "quant_report": final_state.get("quant_report", ""),
+            "buffett_report": final_state.get("buffett_report", ""),
+            "larry_williams_report": final_state.get("larry_williams_report", ""),
+            "livermore_report": final_state.get("livermore_report", ""),
+            "style_report": final_state.get("style_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],

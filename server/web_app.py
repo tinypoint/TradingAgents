@@ -34,6 +34,52 @@ def _report_dir(job_id: str) -> Path:
     return _project_root() / "results" / job.payload.ticker.upper() / str(trade_date) / "reports"
 
 
+def _resolve_archive_root(job_id: str) -> Path | None:
+    """Resolve archive root with a filesystem fallback.
+
+    Primary source is in-memory job.archive_dir. If missing (e.g. process reload),
+    fallback to newest reports bundle under ./reports/<TICKER>_<timestamp>.
+    """
+    job = job_manager.get_job(job_id)
+    if job is None:
+        return None
+
+    if job.archive_dir:
+        p = Path(job.archive_dir)
+        if p.exists() and p.is_dir():
+            return p
+
+    ticker = job.payload.ticker.upper()
+    archive_base = _project_root() / "reports"
+    if not archive_base.exists():
+        return None
+
+    candidates = [p for p in archive_base.glob(f"{ticker}_*") if p.is_dir()]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def _list_output_files(report_dir: Path) -> tuple[list[str], list[str]]:
+    """Recursively collect markdown and artifact files under report_dir."""
+    reports: list[str] = []
+    artifacts: list[str] = []
+    if not report_dir.exists():
+        return reports, artifacts
+
+    for p in sorted(report_dir.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(report_dir)).replace("\\", "/")
+        suffix = p.suffix.lower()
+        if suffix == ".md":
+            reports.append(rel)
+        elif suffix in {".png", ".csv"}:
+            artifacts.append(rel)
+    return reports, artifacts
+
+
 @app.get("/api/health")
 def health() -> JSONResponse:
     return JSONResponse({"ok": True})
@@ -50,6 +96,19 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     record = job_manager.get_job(job_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    report_dir = _report_dir(job_id)
+    fs_reports, fs_artifacts = _list_output_files(report_dir)
+    archive_root = _resolve_archive_root(job_id)
+    archive_files = (
+        sorted([str(p.relative_to(archive_root)).replace("\\", "/") for p in archive_root.rglob("*") if p.is_file()])
+        if archive_root
+        else []
+    )
+
+    merged_reports = sorted(set(record.reports) | set(fs_reports))
+    merged_artifacts = sorted(set(record.artifacts) | set(fs_artifacts))
+    merged_archive_files = sorted(set(record.archive_files) | set(archive_files))
+
     return JobStatusResponse(
         job_id=record.job_id,
         status=record.status,
@@ -58,10 +117,10 @@ def get_job_status(job_id: str) -> JobStatusResponse:
         created_at=record.created_at,
         updated_at=record.updated_at,
         error=record.error,
-        reports=record.reports,
-        artifacts=record.artifacts,
-        archive_dir=record.archive_dir,
-        archive_files=record.archive_files,
+        reports=merged_reports,
+        artifacts=merged_artifacts,
+        archive_dir=str(archive_root) if archive_root else record.archive_dir,
+        archive_files=merged_archive_files,
         llm_calls=record.llm_calls,
         tool_calls=record.tool_calls,
         tokens_in=record.tokens_in,
@@ -72,9 +131,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
 @app.get("/api/jobs/{job_id}/reports")
 def list_reports(job_id: str) -> JSONResponse:
     report_dir = _report_dir(job_id)
-    if not report_dir.exists():
-        return JSONResponse({"reports": []})
-    reports = sorted([p.name for p in report_dir.glob("*.md")])
+    reports, _ = _list_output_files(report_dir)
     return JSONResponse({"reports": reports})
 
 
@@ -84,7 +141,7 @@ def get_report(job_id: str, report_name: str) -> PlainTextResponse:
         raise HTTPException(status_code=400, detail="Invalid report name")
     report_dir = _report_dir(job_id)
     report_path = report_dir / report_name
-    if not report_path.exists() or report_path.suffix.lower() != ".md":
+    if not report_path.exists() or report_path.suffix.lower() != ".md" or not report_path.is_file():
         raise HTTPException(status_code=404, detail="Report not found")
     return PlainTextResponse(report_path.read_text(encoding="utf-8"))
 
@@ -92,9 +149,7 @@ def get_report(job_id: str, report_name: str) -> PlainTextResponse:
 @app.get("/api/jobs/{job_id}/artifacts")
 def list_artifacts(job_id: str) -> JSONResponse:
     report_dir = _report_dir(job_id)
-    if not report_dir.exists():
-        return JSONResponse({"artifacts": []})
-    artifacts = sorted([p.name for p in report_dir.glob("*") if p.suffix.lower() in {".png", ".csv"}])
+    _, artifacts = _list_output_files(report_dir)
     return JSONResponse({"artifacts": artifacts})
 
 
@@ -104,8 +159,12 @@ def get_artifact(job_id: str, artifact_name: str):
         raise HTTPException(status_code=400, detail="Invalid artifact name")
     report_dir = _report_dir(job_id)
     artifact_path = report_dir / artifact_name
-    if not artifact_path.exists() or artifact_path.suffix.lower() not in {".png", ".csv"}:
-        raise HTTPException(status_code=404, detail="Artifact not found")
+    if not artifact_path.exists() or artifact_path.suffix.lower() not in {".png", ".csv"} or not artifact_path.is_file():
+        # Fallback: find by file name recursively for compatibility with older UI payloads.
+        matches = [p for p in report_dir.rglob(artifact_name) if p.is_file() and p.suffix.lower() in {".png", ".csv"}]
+        if not matches:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        artifact_path = matches[0]
     media_type = "image/png" if artifact_path.suffix.lower() == ".png" else "text/csv"
     return FileResponse(path=artifact_path, media_type=media_type, filename=artifact_path.name)
 
@@ -115,23 +174,28 @@ def list_archive(job_id: str) -> JSONResponse:
     job = job_manager.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    archive_root = _resolve_archive_root(job_id)
+    files = (
+        sorted([str(p.relative_to(archive_root)).replace("\\", "/") for p in archive_root.rglob("*") if p.is_file()])
+        if archive_root
+        else job.archive_files
+    )
     return JSONResponse(
         {
-            "archive_dir": job.archive_dir,
-            "files": job.archive_files,
+            "archive_dir": str(archive_root) if archive_root else job.archive_dir,
+            "files": files,
         }
     )
 
 
 @app.get("/api/jobs/{job_id}/archive/{file_path:path}")
 def get_archive_file(job_id: str, file_path: str):
-    job = job_manager.get_job(job_id)
-    if job is None:
+    if job_manager.get_job(job_id) is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    if not job.archive_dir:
+    archive_root = _resolve_archive_root(job_id)
+    if archive_root is None:
         raise HTTPException(status_code=404, detail="Archive not found")
 
-    archive_root = Path(job.archive_dir)
     target = (archive_root / file_path).resolve()
     if archive_root.resolve() not in target.parents and archive_root.resolve() != target:
         raise HTTPException(status_code=400, detail="Invalid file path")

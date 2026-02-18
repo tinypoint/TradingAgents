@@ -22,6 +22,7 @@ class Propagator:
         timeframe: str = "1d",
         start_date: str = "",
         end_date: str = "",
+        selected_masters: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
@@ -31,6 +32,7 @@ class Propagator:
             "timeframe": str(timeframe),
             "start_date": str(start_date),
             "end_date": str(end_date),
+            "selected_masters": list(selected_masters or []),
             "investment_debate_state": InvestDebateState(
                 {"history": "", "current_response": "", "count": 0}
             ),
@@ -48,6 +50,10 @@ class Propagator:
             "sentiment_report": "",
             "news_report": "",
             "quant_report": "",
+            "buffett_report": "",
+            "larry_williams_report": "",
+            "livermore_report": "",
+            "style_report": "",
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

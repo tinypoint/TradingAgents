@@ -1,4 +1,5 @@
 import json
+import json
 import threading
 import time
 import uuid
@@ -22,6 +23,10 @@ REPORT_FILES = {
     "news_report": "news_report.md",
     "fundamentals_report": "fundamentals_report.md",
     "quant_report": "quant_report.md",
+    "buffett_report": "buffett_report.md",
+    "larry_williams_report": "larry_williams_report.md",
+    "livermore_report": "livermore_report.md",
+    "style_report": "style_report.md",
     "investment_plan": "investment_plan.md",
     "trader_investment_plan": "trader_investment_plan.md",
     "final_trade_decision": "final_trade_decision.md",
@@ -76,6 +81,9 @@ def _coerce_text(value: Any) -> str:
             return _coerce_text(content)
         return json.dumps(value, ensure_ascii=False)
     return str(value)
+
+
+TRANSLATOR_AGENT_NAME = "Translator Agent"
 
 
 @dataclass
@@ -168,6 +176,7 @@ class JobManager:
 
             graph = TradingAgentsGraph(
                 selected_analysts=list(payload.analysts),
+                selected_masters=list(payload.selected_masters),
                 debug=False,
                 config=config,
                 callbacks=[stats_handler],
@@ -178,6 +187,7 @@ class JobManager:
                 timeframe=payload.timeframe,
                 start_date=payload.start_date or "",
                 end_date=payload.end_date or payload.analysis_date,
+                selected_masters=list(payload.selected_masters),
             )
             args = graph.propagator.get_graph_args(callbacks=[stats_handler])
 
@@ -241,6 +251,15 @@ class JobManager:
                 final_state=final_state,
                 report_dir=report_dir,
             )
+            record.append_event(
+                "message",
+                {
+                    "agent": TRANSLATOR_AGENT_NAME,
+                    "content": "Starting markdown translation to Simplified Chinese.",
+                },
+            )
+            self._translate_markdown_bundle(record, graph.deep_thinking_llm, report_dir)
+            self._translate_markdown_bundle(record, graph.deep_thinking_llm, archive_dir)
 
             reports = []
             artifacts = []
@@ -289,6 +308,76 @@ class JobManager:
 
         return report_dir
 
+    def _translate_markdown_with_llm(self, llm: Any, markdown: str) -> str:
+        if not markdown.strip():
+            return markdown
+        prompt = (
+            "You are a translation agent for trading reports.\n"
+            "Translate the following markdown into Simplified Chinese.\n"
+            "Requirements:\n"
+            "1) Keep markdown structure exactly (headings/lists/tables/code blocks).\n"
+            "2) Keep numbers, tickers, urls, and file names unchanged.\n"
+            "3) Output translation only.\n\n"
+            "Markdown to translate:\n"
+            f"{markdown}"
+        )
+        response = llm.invoke(prompt)
+        translated = _coerce_text(getattr(response, "content", response)).strip()
+        return translated or markdown
+
+    def _translate_markdown_bundle(self, record: JobRecord, llm: Any, base_dir: Path) -> None:
+        if not base_dir.exists():
+            return
+        generated = 0
+        for src in sorted(base_dir.rglob("*.md")):
+            if src.stem.endswith("_cn"):
+                continue
+            try:
+                try:
+                    source_text = src.read_text(encoding="utf-8")
+                except Exception:
+                    source_text = src.read_text(encoding="utf-8", errors="ignore")
+                if not source_text.strip():
+                    continue
+
+                target = src.with_name(f"{src.stem}_cn.md")
+                translated = self._translate_markdown_with_llm(llm, source_text)
+                target.write_text(translated, encoding="utf-8")
+                generated += 1
+
+                # Expose translated reports in web live result list.
+                if base_dir.name == "reports":
+                    if target.name not in record.reports:
+                        record.reports = sorted([*record.reports, target.name])
+
+                if base_dir.name == "reports":
+                    record.append_event(
+                        "report_ready",
+                        {
+                            "agent": TRANSLATOR_AGENT_NAME,
+                            "report_key": f"{src.stem}_cn",
+                            "report_file": target.name,
+                            "length": len(translated),
+                        },
+                    )
+            except Exception as exc:
+                record.append_event(
+                    "message",
+                    {
+                        "agent": TRANSLATOR_AGENT_NAME,
+                        "content": f"Translation failed for {src.name}: {exc}",
+                    },
+                )
+
+        if generated > 0:
+            record.append_event(
+                "message",
+                {
+                    "agent": TRANSLATOR_AGENT_NAME,
+                    "content": f"Generated {generated} translated markdown files in {base_dir}.",
+                },
+            )
+
     def _write_archive(
         self,
         ticker: str,
@@ -324,6 +413,24 @@ class JobManager:
             content = "\n\n".join([f"### {name}\n{text}" for name, text in analysts_parts])
             sections.append(f"## I. Analyst Team Reports\n\n{content}")
 
+        # 2) Style council
+        style_dir = archive_dir / "2_style"
+        style_parts: List[tuple[str, str]] = []
+        for title, key, file_name in [
+            ("Buffett Advisor", "buffett_report", "buffett.md"),
+            ("Larry Williams Advisor", "larry_williams_report", "larry_williams.md"),
+            ("Livermore Advisor", "livermore_report", "livermore.md"),
+            ("Style Manager", "style_report", "style_manager.md"),
+        ]:
+            content = _coerce_text(final_state.get(key, ""))
+            if content.strip():
+                style_dir.mkdir(exist_ok=True)
+                (style_dir / file_name).write_text(content, encoding="utf-8")
+                style_parts.append((title, content))
+        if style_parts:
+            content = "\n\n".join([f"### {name}\n{text}" for name, text in style_parts])
+            sections.append(f"## II. Style Council Reports\n\n{content}")
+
         # 2) Research
         debate_state = final_state.get("investment_debate_state", {}) or {}
         if isinstance(debate_state, dict):
@@ -341,7 +448,7 @@ class JobManager:
                     research_parts.append((title, content))
             if research_parts:
                 content = "\n\n".join([f"### {name}\n{text}" for name, text in research_parts])
-                sections.append(f"## II. Research Team Decision\n\n{content}")
+                sections.append(f"## III. Research Team Decision\n\n{content}")
 
         # 3) Trading
         trader_plan = _coerce_text(final_state.get("trader_investment_plan", ""))
@@ -349,7 +456,7 @@ class JobManager:
             trading_dir = archive_dir / "3_trading"
             trading_dir.mkdir(exist_ok=True)
             (trading_dir / "trader.md").write_text(trader_plan, encoding="utf-8")
-            sections.append(f"## III. Trading Team Plan\n\n### Trader\n{trader_plan}")
+            sections.append(f"## IV. Trading Team Plan\n\n### Trader\n{trader_plan}")
 
         # 4) Risk & 5) Portfolio
         risk_state = final_state.get("risk_debate_state", {}) or {}
@@ -368,14 +475,14 @@ class JobManager:
                     risk_parts.append((title, content))
             if risk_parts:
                 content = "\n\n".join([f"### {name}\n{text}" for name, text in risk_parts])
-                sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
+                sections.append(f"## V. Risk Management Team Decision\n\n{content}")
 
             judge = _coerce_text(risk_state.get("judge_decision", ""))
             if judge.strip():
                 portfolio_dir = archive_dir / "5_portfolio"
                 portfolio_dir.mkdir(exist_ok=True)
                 (portfolio_dir / "decision.md").write_text(judge, encoding="utf-8")
-                sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{judge}")
+                sections.append(f"## VI. Portfolio Manager Decision\n\n### Portfolio Manager\n{judge}")
 
         # Include result artifacts in archive as well.
         artifacts_dir = archive_dir / "6_artifacts"
@@ -387,7 +494,7 @@ class JobManager:
                 dst.write_bytes(src.read_bytes())
                 copied += 1
         if copied:
-            sections.append("## VI. Artifacts\n\nSaved under `6_artifacts/`.")
+            sections.append("## VII. Artifacts\n\nSaved under `6_artifacts/`.")
 
         header = (
             f"# Trading Analysis Report: {ticker}\n\n"

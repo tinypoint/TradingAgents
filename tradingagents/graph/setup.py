@@ -38,7 +38,9 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
 
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self,
+        selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_masters=None,
     ):
         """Set up and compile the agent workflow graph.
 
@@ -90,6 +92,8 @@ class GraphSetup:
             analyst_nodes["quant"] = create_quant_analyst(self.quick_thinking_llm)
             delete_nodes["quant"] = create_msg_delete()
 
+        selected_masters = selected_masters or []
+
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(
             self.quick_thinking_llm, self.bull_memory
@@ -100,7 +104,9 @@ class GraphSetup:
         research_manager_node = create_research_manager(
             self.deep_thinking_llm, self.invest_judge_memory
         )
+        style_manager_node = create_style_manager(self.deep_thinking_llm)
         trader_node = create_trader(self.quick_thinking_llm, self.trader_memory)
+        master_nodes = []
 
         # Create risk analysis nodes
         aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
@@ -126,7 +132,20 @@ class GraphSetup:
         workflow.add_node("Bull Researcher", bull_researcher_node)
         workflow.add_node("Bear Researcher", bear_researcher_node)
         workflow.add_node("Research Manager", research_manager_node)
+        workflow.add_node("Style Manager", style_manager_node)
         workflow.add_node("Trader", trader_node)
+        if "buffett" in selected_masters:
+            workflow.add_node("Buffett Advisor", create_buffett_advisor(self.quick_thinking_llm))
+            master_nodes.append("Buffett Advisor")
+        if "larry_williams" in selected_masters:
+            workflow.add_node(
+                "Larry Williams Advisor",
+                create_larry_williams_advisor(self.quick_thinking_llm),
+            )
+            master_nodes.append("Larry Williams Advisor")
+        if "livermore" in selected_masters:
+            workflow.add_node("Livermore Advisor", create_livermore_advisor(self.quick_thinking_llm))
+            master_nodes.append("Livermore Advisor")
         workflow.add_node("Aggressive Analyst", aggressive_analyst)
         workflow.add_node("Neutral Analyst", neutral_analyst)
         workflow.add_node("Conservative Analyst", conservative_analyst)
@@ -177,7 +196,14 @@ class GraphSetup:
                 "Research Manager": "Research Manager",
             },
         )
-        workflow.add_edge("Research Manager", "Trader")
+        if master_nodes:
+            workflow.add_edge("Research Manager", master_nodes[0])
+            for i in range(len(master_nodes) - 1):
+                workflow.add_edge(master_nodes[i], master_nodes[i + 1])
+            workflow.add_edge(master_nodes[-1], "Style Manager")
+            workflow.add_edge("Style Manager", "Trader")
+        else:
+            workflow.add_edge("Research Manager", "Trader")
         workflow.add_edge("Trader", "Aggressive Analyst")
         workflow.add_conditional_edges(
             "Aggressive Analyst",
